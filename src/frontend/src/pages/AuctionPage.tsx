@@ -11,9 +11,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Clock, Gavel, Heart, Package, TrendingUp, Users } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Gavel,
+  Heart,
+  Package,
+  Shield,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Footer } from "../components/Footer";
 
@@ -39,6 +49,16 @@ interface PastAuction {
   finalPrice: number;
   winner: string;
   image: string;
+}
+
+interface CoinData {
+  id: number;
+  left: number; // percent
+  size: number; // px
+  duration: number; // seconds
+  delay: number; // seconds
+  wobble: number; // px
+  rotateEnd: number; // degrees
 }
 
 // ── Static Data ──────────────────────────────────────────────────────────────
@@ -163,8 +183,366 @@ const HOW_IT_WORKS = [
   },
 ];
 
+const BID_TICKER_MESSAGES = [
+  "Priya D. just bid ₹39,500 on Mithila Triptych",
+  "Arjun M. just bid ₹8,700 on Warli Scene",
+  "Meera S. just bid ₹23,000 on Kalamkari Lotus",
+  "Ravi T. just bid ₹4,800 on Nilgiris Mandala",
+  "Sunita P. just bid ₹17,200 on Mirror Dupatta",
+  "Kavya R. just bid ₹13,400 on Toda Panel No. 7",
+  "Deepa N. just bid ₹41,200 on Mithila Triptych",
+];
+
+const AMBIENT_BID_AMOUNTS = [
+  "₹12,500",
+  "₹38,000",
+  "₹8,200",
+  "₹22,750",
+  "₹4,200",
+];
+const BID_COUNTER_VALUES = [2, 3, 5, 2, 4];
+
 function formatBid(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+// ── Coin Rain ────────────────────────────────────────────────────────────────
+
+function generateCoins(count: number): CoinData[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: Math.random() * 96 + 2, // 2–98% of viewport width
+    size: Math.random() * 20 + 42, // 42–62px
+    duration: Math.random() * 1.8 + 1.8, // 1.8–3.6s
+    delay: Math.random() * 1.4, // 0–1.4s
+    wobble: Math.random() * 22 + 8, // ±8–30px sway
+    rotateEnd: Math.random() > 0.5 ? 360 : -360,
+  }));
+}
+
+function CoinRain({ active }: { active: boolean }) {
+  const coins = useMemo(() => generateCoins(22), []);
+
+  return (
+    <AnimatePresence>
+      {active && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            pointerEvents: "none",
+            overflow: "hidden",
+          }}
+        >
+          {coins.map((coin) => (
+            <motion.div
+              key={coin.id}
+              initial={{ y: -90, x: 0, rotate: 0, opacity: 1 }}
+              animate={{
+                y: "110vh",
+                x: [0, coin.wobble, 0, -coin.wobble, coin.wobble * 0.5, 0],
+                rotate: coin.rotateEnd,
+                opacity: [1, 1, 1, 0.8, 0],
+              }}
+              transition={{
+                duration: coin.duration,
+                delay: coin.delay,
+                ease: "easeIn",
+                x: {
+                  duration: coin.duration,
+                  ease: "easeInOut",
+                  times: [0, 0.2, 0.4, 0.6, 0.8, 1],
+                },
+                opacity: {
+                  duration: coin.duration,
+                  times: [0, 0.5, 0.7, 0.85, 1],
+                },
+              }}
+              style={{
+                position: "absolute",
+                left: `${coin.left}%`,
+                top: 0,
+                width: coin.size,
+                height: coin.size,
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(circle at 35% 35%, oklch(0.90 0.20 88), oklch(0.82 0.21 82) 45%, oklch(0.65 0.22 75))",
+                border: "2px solid oklch(0.75 0.20 78)",
+                boxShadow: `
+                  inset 0 2px 4px oklch(0.92 0.12 90 / 0.7),
+                  inset 0 -2px 5px oklch(0.50 0.18 72 / 0.5),
+                  0 3px 10px oklch(0.65 0.20 80 / 0.55),
+                  0 1px 3px oklch(0.40 0.16 70 / 0.4)
+                `,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                userSelect: "none",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: coin.size * 0.42,
+                  fontWeight: 800,
+                  color: "oklch(0.35 0.12 60)",
+                  textShadow: "0 1px 2px oklch(0.85 0.15 88 / 0.8)",
+                  lineHeight: 1,
+                  fontFamily: "serif",
+                }}
+              >
+                ₹
+              </span>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ── Bid Activity Ticker ──────────────────────────────────────────────────────
+
+function BidActivityTicker() {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % BID_TICKER_MESSAGES.length);
+        setVisible(true);
+      }, 350);
+    }, 3200);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: 28,
+        left: 32,
+        zIndex: 10,
+        width: 300,
+        background: "rgba(255,255,255,0.97)",
+        borderRadius: 14,
+        boxShadow:
+          "0 4px 20px oklch(0.60 0.12 185 / 0.18), 0 1px 4px oklch(0.20 0.05 185 / 0.12)",
+        borderLeft: "3px solid oklch(0.60 0.12 185)",
+        padding: "10px 14px",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          marginBottom: 5,
+        }}
+      >
+        {/* Pulsing live dot */}
+        <span
+          style={{
+            position: "relative",
+            display: "inline-flex",
+            width: 8,
+            height: 8,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              background: "oklch(0.55 0.20 145)",
+              animation: "ping 1.2s cubic-bezier(0,0,0.2,1) infinite",
+            }}
+          />
+          <span
+            style={{
+              position: "relative",
+              borderRadius: "50%",
+              width: 8,
+              height: 8,
+              background: "oklch(0.55 0.20 145)",
+              display: "inline-block",
+            }}
+          />
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.15em",
+            textTransform: "uppercase",
+            color: "oklch(0.55 0.20 145)",
+          }}
+        >
+          Live Bids
+        </span>
+      </div>
+      {/* Ticker message */}
+      <AnimatePresence mode="wait">
+        {visible && (
+          <motion.p
+            key={currentIndex}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              margin: 0,
+              fontSize: 12.5,
+              fontWeight: 500,
+              color: "oklch(0.28 0.05 185)",
+              lineHeight: 1.4,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {BID_TICKER_MESSAGES[currentIndex]}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Ambient Floating Bid Bubbles ─────────────────────────────────────────────
+
+function AmbientBidBubbles() {
+  const bubbles = useMemo(
+    () =>
+      AMBIENT_BID_AMOUNTS.map((amount, i) => ({
+        id: i,
+        amount,
+        left: 60 + i * 8, // right side of hero, 60–92%
+        bottom: 10 + i * 14, // staggered vertical start
+        delay: i * 0.9,
+      })),
+    [],
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        overflow: "hidden",
+        zIndex: 1,
+      }}
+    >
+      {bubbles.map((b) => (
+        <motion.div
+          key={b.id}
+          initial={{ y: 0, opacity: 0 }}
+          animate={{
+            y: [-10, -90, -10],
+            opacity: [0, 0.15, 0.15, 0],
+          }}
+          transition={{
+            duration: 5.5,
+            delay: b.delay,
+            repeat: Number.POSITIVE_INFINITY,
+            repeatDelay: 1.2,
+            ease: "easeInOut",
+            opacity: { times: [0, 0.15, 0.85, 1] },
+          }}
+          style={{
+            position: "absolute",
+            bottom: `${b.bottom}%`,
+            left: `${b.left}%`,
+            background: "oklch(0.60 0.12 185 / 0.18)",
+            backdropFilter: "blur(2px)",
+            border: "1px solid oklch(0.60 0.12 185 / 0.22)",
+            borderRadius: 999,
+            padding: "5px 12px",
+            fontSize: 13,
+            fontWeight: 700,
+            color: "oklch(0.42 0.12 185)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {b.amount}
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ── Bid Counter Pulse ────────────────────────────────────────────────────────
+
+function BidCounterPulse() {
+  const [countIndex, setCountIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCountIndex((prev) => (prev + 1) % BID_COUNTER_VALUES.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        marginLeft: 10,
+        fontSize: 11.5,
+        fontWeight: 600,
+        color: "oklch(0.50 0.14 185)",
+      }}
+    >
+      {/* Pulsing dot */}
+      <span
+        style={{
+          position: "relative",
+          display: "inline-flex",
+          width: 7,
+          height: 7,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: "oklch(0.58 0.18 145)",
+            animation: "ping 1.5s cubic-bezier(0,0,0.2,1) infinite",
+          }}
+        />
+        <span
+          style={{
+            position: "relative",
+            borderRadius: "50%",
+            width: 7,
+            height: 7,
+            background: "oklch(0.58 0.18 145)",
+            display: "inline-block",
+          }}
+        />
+      </span>
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={countIndex}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          transition={{ duration: 0.25 }}
+          style={{ display: "inline-block" }}
+        >
+          {BID_COUNTER_VALUES[countIndex]} new bids in last minute
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
 }
 
 // ── Bid Dialog ───────────────────────────────────────────────────────────────
@@ -173,15 +551,23 @@ interface BidDialogProps {
   item: AuctionItem | null;
   open: boolean;
   onClose: () => void;
+  onBidSuccess: () => void;
 }
 
-function BidDialog({ item, open, onClose }: BidDialogProps) {
+function BidDialog({ item, open, onClose, onBidSuccess }: BidDialogProps) {
   const [bidAmount, setBidAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   if (!item) return null;
 
   const minBid = item.currentBid + 100;
+  const quickBids = [
+    minBid,
+    item.currentBid + 500,
+    item.currentBid + 1000,
+    item.currentBid + 2500,
+  ];
 
   const handleSubmit = () => {
     const amount = Number(bidAmount.replace(/,/g, ""));
@@ -196,98 +582,206 @@ function BidDialog({ item, open, onClose }: BidDialogProps) {
     setIsSubmitting(true);
     setTimeout(() => {
       setIsSubmitting(false);
-      setBidAmount("");
-      onClose();
-      toast.success(`Bid of ${formatBid(amount)} placed successfully!`);
-    }, 800);
+      setIsSuccess(true);
+      setTimeout(() => {
+        setIsSuccess(false);
+        setBidAmount("");
+        onBidSuccess();
+        onClose();
+        toast.success(`Bid of ${formatBid(amount)} placed successfully!`);
+      }, 1200);
+    }, 900);
+  };
+
+  const handleClose = () => {
+    setBidAmount("");
+    setIsSuccess(false);
+    onClose();
   };
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!v) {
-          setBidAmount("");
-          onClose();
-        }
+        if (!v) handleClose();
       }}
     >
-      <DialogContent className="sm:max-w-md bg-white border border-gray-100">
-        <DialogHeader>
-          <DialogTitle className="font-display text-xl text-charcoal leading-tight">
-            {item.title}
-          </DialogTitle>
-          <p className="text-xs text-charcoal/50 tracking-widest uppercase mt-1">
-            {item.region} · {item.category}
-          </p>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-lg bg-white border border-gray-100 p-0 overflow-hidden rounded-2xl">
+        {/* Top image strip */}
+        <div className="relative h-36 overflow-hidden">
+          <img
+            src={item.image}
+            alt={item.title}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/60" />
+          <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
+            <p className="text-[10px] tracking-[0.2em] uppercase text-white/70 font-medium">
+              {item.region} · {item.category}
+            </p>
+            <h2 className="font-display text-lg font-semibold text-white leading-tight mt-0.5">
+              {item.title}
+            </h2>
+          </div>
+          {/* Time left chip */}
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
+            <Clock className="w-3 h-3 text-charcoal/60" />
+            <span className="text-xs font-medium text-charcoal/70">
+              {item.timeLeft}
+            </span>
+          </div>
+        </div>
 
-        <div className="space-y-5 py-2">
-          {/* Current bid display */}
-          <div className="bg-teal-light/40 rounded-xl px-5 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-charcoal/50 tracking-widest uppercase">
-                Current Bid
+        <div className="px-6 pt-5 pb-6 space-y-5">
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div
+              className="rounded-xl px-4 py-3 text-center"
+              style={{ background: "oklch(0.96 0.03 185)" }}
+            >
+              <p className="text-[10px] tracking-widest uppercase text-charcoal/45 font-medium">
+                Current
               </p>
               <p
-                className="font-display text-2xl font-semibold mt-0.5"
-                style={{ color: "oklch(0.60 0.12 185)" }}
+                className="font-display text-xl font-bold mt-0.5"
+                style={{ color: "oklch(0.50 0.14 185)" }}
               >
                 {formatBid(item.currentBid)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-charcoal/50 tracking-widest uppercase">
+            <div className="rounded-xl px-4 py-3 text-center bg-gray-50">
+              <p className="text-[10px] tracking-widest uppercase text-charcoal/45 font-medium">
                 Bids
               </p>
-              <p className="text-xl font-semibold text-charcoal/70 mt-0.5">
-                {item.bidCount}
+              <div className="flex items-center justify-center gap-1 mt-0.5">
+                <Users className="w-3.5 h-3.5 text-charcoal/50" />
+                <p className="font-display text-xl font-bold text-charcoal/70">
+                  {item.bidCount}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl px-4 py-3 text-center bg-gray-50">
+              <p className="text-[10px] tracking-widest uppercase text-charcoal/45 font-medium">
+                Minimum
+              </p>
+              <p className="font-display text-xl font-bold text-charcoal/70 mt-0.5">
+                {formatBid(minBid)}
               </p>
             </div>
           </div>
 
-          {/* Input */}
+          {/* Quick bid buttons */}
+          <div>
+            <p className="text-[10px] tracking-widest uppercase text-charcoal/45 font-medium mb-2">
+              Quick Bid
+            </p>
+            <div className="grid grid-cols-4 gap-2">
+              {quickBids.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setBidAmount(String(amount))}
+                  className={`rounded-lg py-2 px-1 text-xs font-semibold border transition-all duration-150 ${
+                    bidAmount === String(amount)
+                      ? "border-transparent text-white"
+                      : "border-gray-200 text-charcoal/60 bg-white hover:border-teal/40 hover:text-charcoal"
+                  }`}
+                  style={
+                    bidAmount === String(amount)
+                      ? { background: "oklch(0.60 0.12 185)" }
+                      : {}
+                  }
+                >
+                  {formatBid(amount)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom bid input */}
           <div className="space-y-2">
             <Label
               htmlFor="bid-input"
-              className="text-xs text-charcoal/60 tracking-widest uppercase"
+              className="text-[10px] text-charcoal/50 tracking-widest uppercase font-medium"
             >
-              Your Bid (₹)
+              Or Enter Custom Bid (₹)
             </Label>
-            <Input
-              id="bid-input"
-              type="number"
-              placeholder={`Min. ${formatBid(minBid)}`}
-              value={bidAmount}
-              onChange={(e) => setBidAmount(e.target.value)}
-              className="border-gray-200 focus-visible:ring-teal text-charcoal placeholder:text-charcoal/30"
-            />
-            <p className="text-xs text-charcoal/40">
-              Minimum bid: {formatBid(minBid)} (₹100 above current)
-            </p>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-charcoal/40 font-medium text-sm">
+                ₹
+              </span>
+              <Input
+                id="bid-input"
+                type="number"
+                placeholder={`e.g. ${(item.currentBid + 1500).toLocaleString("en-IN")}`}
+                value={bidAmount}
+                onChange={(e) => setBidAmount(e.target.value)}
+                className="pl-8 border-gray-200 focus-visible:ring-1 focus-visible:ring-teal/40 text-charcoal placeholder:text-charcoal/25 rounded-lg h-11"
+              />
+            </div>
+          </div>
+
+          {/* Trust badges */}
+          <div className="flex items-center gap-4 py-3 border-y border-gray-100">
+            <div className="flex items-center gap-1.5 text-charcoal/45">
+              <Shield className="w-3.5 h-3.5" />
+              <span className="text-xs">Secure Bidding</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-charcoal/45">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="text-xs">Verified Artwork</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-charcoal/45">
+              <Zap className="w-3.5 h-3.5" />
+              <span className="text-xs">Instant Confirmation</span>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={handleClose}
+              className="flex-1 border-gray-200 text-charcoal/55 hover:text-charcoal hover:bg-gray-50 rounded-xl h-11"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || isSuccess}
+              className="flex-[2] text-white font-semibold rounded-xl h-11 transition-all duration-200"
+              style={{
+                background: isSuccess
+                  ? "oklch(0.55 0.15 145)"
+                  : "oklch(0.60 0.12 185)",
+              }}
+            >
+              {isSuccess ? (
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Bid Placed!
+                </span>
+              ) : isSubmitting ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Placing bid…
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Gavel className="w-4 h-4" />
+                  Place Bid
+                  {bidAmount &&
+                    !Number.isNaN(Number(bidAmount)) &&
+                    Number(bidAmount) >= minBid && (
+                      <span className="opacity-80">
+                        · {formatBid(Number(bidAmount))}
+                      </span>
+                    )}
+                </span>
+              )}
+            </Button>
           </div>
         </div>
-
-        <DialogFooter className="gap-3 flex-col sm:flex-row">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setBidAmount("");
-              onClose();
-            }}
-            className="border-gray-200 text-charcoal/60 hover:text-charcoal hover:bg-gray-50"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="text-white font-medium hover:opacity-90 transition-opacity"
-            style={{ background: "oklch(0.60 0.12 185)" }}
-          >
-            {isSubmitting ? "Placing bid…" : "Submit Bid"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -354,36 +848,52 @@ function AuctionCard({ item, index, onBid }: AuctionCardProps) {
           <Separator className="my-4 bg-gray-50" />
 
           {/* Bid info row */}
-          <div className="flex items-end justify-between mb-4">
+          <div
+            className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between"
+            style={{ background: "oklch(0.97 0.02 185)" }}
+          >
             <div>
-              <p className="text-[10px] tracking-widest uppercase text-charcoal/40">
+              <p className="text-[10px] tracking-widest uppercase text-charcoal/40 font-medium">
                 Current Bid
               </p>
               <p
-                className="font-display text-xl font-semibold mt-0.5"
-                style={{ color: "oklch(0.60 0.12 185)" }}
+                className="font-display text-2xl font-bold mt-0.5"
+                style={{ color: "oklch(0.50 0.14 185)" }}
               >
                 {formatBid(item.currentBid)}
               </p>
             </div>
-            <div className="text-right">
-              <div className="flex items-center gap-1 text-charcoal/40 justify-end">
+            <div className="text-right space-y-1">
+              <div className="flex items-center gap-1.5 text-charcoal/45 justify-end">
                 <TrendingUp className="w-3 h-3" />
-                <span className="text-xs">{item.bidCount} bids</span>
+                <span className="text-xs font-medium">
+                  {item.bidCount} bids
+                </span>
               </div>
-              <div className="flex items-center gap-1 text-charcoal/40 justify-end mt-1">
-                <Clock className="w-3 h-3" />
-                <span className="text-xs">{item.timeLeft}</span>
+              <div className="flex items-center gap-1.5 justify-end">
+                <Clock
+                  className={`w-3 h-3 ${isEndingToday ? "" : "text-charcoal/40"}`}
+                  style={
+                    isEndingToday ? { color: "oklch(0.58 0.20 27)" } : undefined
+                  }
+                />
+                <span
+                  className={`text-xs font-medium ${isEndingToday ? "font-semibold" : "text-charcoal/45"}`}
+                  style={isEndingToday ? { color: "oklch(0.58 0.20 27)" } : {}}
+                >
+                  {item.timeLeft}
+                </span>
               </div>
             </div>
           </div>
 
           {/* CTA */}
           <Button
-            className="w-full text-white font-medium text-sm hover:opacity-90 transition-opacity"
+            className="w-full text-white font-semibold text-sm hover:opacity-90 transition-all duration-200 rounded-xl h-10 gap-2"
             style={{ background: "oklch(0.60 0.12 185)" }}
             onClick={() => onBid(item)}
           >
+            <Gavel className="w-4 h-4" />
             Place Bid
           </Button>
         </CardContent>
@@ -465,6 +975,7 @@ function PastAuctionCard({
 export default function AuctionPage() {
   const [selectedItem, setSelectedItem] = useState<AuctionItem | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [showCoins, setShowCoins] = useState(false);
 
   const openBidDialog = (item: AuctionItem) => {
     setSelectedItem(item);
@@ -473,23 +984,38 @@ export default function AuctionPage() {
 
   const closeBidDialog = () => {
     setDialogOpen(false);
-    // keep selectedItem briefly for exit animation
     setTimeout(() => setSelectedItem(null), 300);
+  };
+
+  const handleBidSuccess = () => {
+    setShowCoins(true);
+    setTimeout(() => setShowCoins(false), 4500);
   };
 
   return (
     <main className="min-h-screen bg-white">
+      {/* ── Coin Rain Overlay ─────────────────────────────────────────── */}
+      <CoinRain active={showCoins} />
+
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <section className="relative bg-white border-b border-gray-100 overflow-hidden">
-        {/* Subtle background pattern */}
+        {/* Ambient floating bubbles (behind text) */}
+        <AmbientBidBubbles />
+
+        {/* Subtle background gradient */}
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.04]"
           style={{
             backgroundImage:
               "radial-gradient(circle at 20% 50%, oklch(0.60 0.12 185) 0%, transparent 50%), radial-gradient(circle at 80% 20%, oklch(0.72 0.14 80) 0%, transparent 50%)",
+            zIndex: 0,
           }}
         />
-        <div className="max-w-7xl mx-auto px-8 py-20 relative">
+
+        <div
+          className="max-w-7xl mx-auto px-8 py-20 relative"
+          style={{ zIndex: 2 }}
+        >
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -550,6 +1076,9 @@ export default function AuctionPage() {
             </div>
           </motion.div>
         </div>
+
+        {/* Live bid ticker — positioned at bottom-left of hero */}
+        <BidActivityTicker />
       </section>
 
       {/* ── Active Auctions ───────────────────────────────────────────── */}
@@ -565,8 +1094,9 @@ export default function AuctionPage() {
             <h2 className="font-display text-3xl font-bold text-charcoal">
               Active Lots
             </h2>
-            <p className="text-sm text-charcoal/45 mt-1">
+            <p className="text-sm text-charcoal/45 mt-1 flex items-center flex-wrap gap-1">
               6 artworks currently accepting bids
+              <BidCounterPulse />
             </p>
           </div>
           <Badge
@@ -695,9 +1225,17 @@ export default function AuctionPage() {
             item={selectedItem}
             open={dialogOpen}
             onClose={closeBidDialog}
+            onBidSuccess={handleBidSuccess}
           />
         )}
       </AnimatePresence>
+
+      {/* Ping animation keyframe */}
+      <style>{`
+        @keyframes ping {
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+      `}</style>
     </main>
   );
 }

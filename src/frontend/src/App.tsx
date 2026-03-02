@@ -10,6 +10,7 @@ import {
 import { Navbar } from "./components/Navbar";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import AuctionPage from "./pages/AuctionPage";
+import CheckoutPage from "./pages/CheckoutPage";
 import DashboardPage from "./pages/DashboardPage";
 import HeritagePage from "./pages/HeritagePage";
 import HomePage from "./pages/HomePage";
@@ -109,6 +110,18 @@ const auctionRoute = createRoute({
   component: AuctionPage,
 });
 
+const checkoutRoute = createRoute({
+  getParentRoute: () => protectedLayout,
+  path: "/checkout",
+  component: CheckoutPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    type: (search.type as string) ?? "bundle",
+    courseId: (search.courseId as string) ?? "",
+    title: (search.title as string) ?? "",
+    price: (search.price as string) ?? "0",
+  }),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   heritageRoute,
@@ -120,6 +133,7 @@ const routeTree = rootRoute.addChildren([
     uploadRoute,
     partnersRoute,
     auctionRoute,
+    checkoutRoute,
   ]),
 ]);
 
